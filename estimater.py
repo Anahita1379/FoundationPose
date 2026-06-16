@@ -170,12 +170,28 @@ class FoundationPose:
       else:
         self.glctx = glctx
 
-    depth = erode_depth(depth, radius=2, device='cuda')
-    depth = bilateral_filter_depth(depth, radius=2, device='cuda')
+    # depth = erode_depth(depth, radius=2, device='cuda')
+    # depth = bilateral_filter_depth(depth, radius=2, device='cuda')
+    # For dense RGB-D depth, these filters are useful.
+    # For sparse LiDAR-projected depth, they can erase all valid points.
+    if np.count_nonzero(depth >= 0.001) > 0.05 * depth.size:
+        depth = erode_depth(depth, radius=2, device='cuda')
+        depth = bilateral_filter_depth(depth, radius=2, device='cuda')
+    else:
+        print("Skipping depth erosion/filtering because depth is sparse.")
 
     if self.debug>=2:
+      # xyz_map = depth2xyzmap(depth, K)
+      # valid = xyz_map[...,2]>=0.001
       xyz_map = depth2xyzmap(depth, K)
-      valid = xyz_map[...,2]>=0.001
+
+      valid = (depth >= 0.001) & np.isfinite(xyz_map).all(axis=-1)
+
+      if ob_mask is not None:
+          valid = valid & ob_mask.astype(bool)
+
+      print("REGISTER valid count:", np.count_nonzero(valid))
+      
       pcd = toOpen3dCloud(xyz_map[valid], rgb[valid])
       o3d.io.write_point_cloud(f'{self.debug_dir}/scene_raw.ply',pcd)
       cv2.imwrite(f'{self.debug_dir}/ob_mask.png', (ob_mask*255.0).clip(0,255))

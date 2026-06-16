@@ -41,7 +41,16 @@ if __name__=='__main__':
   est = FoundationPose(model_pts=mesh.vertices, model_normals=mesh.vertex_normals, mesh=mesh, scorer=scorer, refiner=refiner, debug_dir=debug_dir, debug=debug, glctx=glctx)
   logging.info("estimator initialization done")
 
-  reader = YcbineoatReader(video_dir=args.test_scene_dir, shorter_side=None, zfar=np.inf)
+  # reader = YcbineoatReader(video_dir=args.test_scene_dir, shorter_side=None, zfar=np.inf)
+  reader = RosbagFoundationPoseReader(
+      root="/home/anahita/Dataset/rosbag_extracted_300m",
+      split_file="/home/anahita/self-supervised-depth-completion/splits/iac_test.txt",
+      mask_file="/home/anahita/Dataset/rosbag_extracted_300m/mask/mask_012849.png",
+      use_lidar_mask=True,
+      start_id=12849,
+  )
+  # mask_file="/home/anahita/Dataset/rosbag_extracted_300m/mask/mask_005020.png",
+
 
   for i in range(len(reader.color_files)):
     logging.info(f'i:{i}')
@@ -49,8 +58,27 @@ if __name__=='__main__':
     depth = reader.get_depth(i)
     if i==0:
       mask = reader.get_mask(0).astype(bool)
+      
+      # For debugging 
+      xyz_map = depth2xyzmap(depth, reader.K)
+
+      valid1 = depth >= 0.001
+      valid2 = np.isfinite(xyz_map).all(axis=-1)
+      valid3 = mask.astype(bool)
+
+      print("valid depth:", np.count_nonzero(valid1))
+      print("finite xyz:", np.count_nonzero(valid2))
+      print("mask:", np.count_nonzero(valid3))
+      print("depth & mask:", np.count_nonzero(valid1 & valid3))
+      print("depth & finite xyz:", np.count_nonzero(valid1 & valid2))
+      print("depth & finite xyz & mask:", np.count_nonzero(valid1 & valid2 & valid3))
+      print("xyz min/max:", np.nanmin(xyz_map), np.nanmax(xyz_map))
+      # --------------------
+      
       pose = est.register(K=reader.K, rgb=color, depth=depth, ob_mask=mask, iteration=args.est_refine_iter)
 
+      
+      
       if debug>=3:
         m = mesh.copy()
         m.apply_transform(pose)
